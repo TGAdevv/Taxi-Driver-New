@@ -7,7 +7,6 @@ public class Camera : MonoBehaviour
     public float smoothTime = 0.3f;
 
     Vector3 velocity = Vector3.zero;
-    float distance;
 
     private void Start()
     {

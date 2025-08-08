@@ -27,8 +27,10 @@ public class TaxiLaneSwitcher : MonoBehaviour
     void generateLanes(int steps, float simulatedSpeed) 
     {
         busyGenerating = true;
-        Transform centerBefore = center;
-        Transform transformBefore = transform;
+        Vector3 centerPosBefore = center.position;
+        Quaternion centerRotBefore = center.rotation;
+        Vector3 transformPosBefore = transform.position;
+        Quaternion transformRotBefore = transform.rotation;
         float distBefore = distance;
         float carSpeedBefore = carSpeed;
         carSpeed = simulatedSpeed;
@@ -58,14 +60,8 @@ public class TaxiLaneSwitcher : MonoBehaviour
         renderedLanes[2].SetPositions(lane2.ToArray());
         renderedLanes[3].SetPositions(lane3.ToArray());
 
-        for (int i = 0; i < 1000; i++)
-        {
-            center.position = centerBefore.position;
-            center.rotation = centerBefore.rotation;
-
-            transform.position = transformBefore.position;
-            transform.rotation = transformBefore.rotation;
-        }
+        center.SetPositionAndRotation(centerPosBefore, centerRotBefore);
+        transform.SetPositionAndRotation(transformPosBefore, transformRotBefore);
 
         distance = distBefore;
         carSpeed = carSpeedBefore;
