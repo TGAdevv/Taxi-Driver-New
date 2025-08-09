@@ -5,10 +5,12 @@ public class TaxiLaneSwitcher : MonoBehaviour
 {
     // Stel de X-posities van de rijbanen in (links, midden, rechts)
     private int currentLane = 1; // Start in het midden (index 1)
-    public float laneSwitchSpeed = 10f; // Hoe snel de taxi naar de nieuwe baan beweegt
+    public float Base_laneSwitchSpeed = 1f; // Hoe snel de taxi naar de nieuwe baan beweegt
     public int maxLanes;
 
     public Transform center;
+
+    [SerializeField] AnimationCurve laneSwitchSpeedOverCarSpeed;
 
     public float carSpeed = 0;
     float centerSpeed = 0;
@@ -18,7 +20,8 @@ public class TaxiLaneSwitcher : MonoBehaviour
     public float maxSpeed = 20;
     public float laneWidth;
 
-    float distance;
+    float distanceCenter;
+    float distanceTransform;
     float degreesBeforeRot;
 
     public LineRenderer[] renderedLanes = new LineRenderer[4];
@@ -31,7 +34,8 @@ public class TaxiLaneSwitcher : MonoBehaviour
         Quaternion centerRotBefore = center.rotation;
         Vector3 transformPosBefore = transform.position;
         Quaternion transformRotBefore = transform.rotation;
-        float distBefore = distance;
+        float distBefore = distanceCenter;
+        float distTransBefore = distanceTransform;
         float carSpeedBefore = carSpeed;
         carSpeed = simulatedSpeed;
 
@@ -42,14 +46,19 @@ public class TaxiLaneSwitcher : MonoBehaviour
 
         for (int i = 0; i < steps; i++)
         {
-            RotateTick(10, 50, 90, false);
-            center.position += center.forward * centerSpeed * Time.deltaTime;
-            distance += centerSpeed * Time.deltaTime;
+            RotateTick(10, 20, new Vector3(0, .5f, -42), true);
+
+            distanceCenter    += centerSpeed * Time.deltaTime;
+            distanceTransform += carSpeed * Time.deltaTime;
+
+            center.position -= Vector3.up * .5f;
 
             lane0.Add(center.position + (center.right * -3));
             lane1.Add(center.position + (center.right * -1));
             lane2.Add(center.position + (center.right));
             lane3.Add(center.position + (center.right * 3));
+
+            center.position += Vector3.up * .5f;
         }
 
         foreach (LineRenderer line in renderedLanes)
@@ -63,55 +72,89 @@ public class TaxiLaneSwitcher : MonoBehaviour
         center.SetPositionAndRotation(centerPosBefore, centerRotBefore);
         transform.SetPositionAndRotation(transformPosBefore, transformRotBefore);
 
-        distance = distBefore;
+        distanceCenter = distBefore;
+        distanceTransform = distTransBefore;
         carSpeed = carSpeedBefore;
         busyGenerating = false;
+        t = 0;
+        completedTurn = false;
     }
 
     private void Start()
     {
-        generateLanes(1000, 60);
-        print("r: " + (40)/(.5f*Mathf.PI));
+        generateLanes(10000, 0.5f);
     }
 
-    void RotateTick(float beginDist, float endDist, float degrees, bool affectTransform = true) 
+    float t = 0;
+    bool completedTurn = false;
+    void RotateTick(float beginDist, float radius, Vector3 beginPoint, bool rightTurn, bool affectTransform = true) 
     {
+        Vector3 origin = beginPoint + (Vector3.right * radius);
+
+        float endDist = beginDist + (.5f * Mathf.PI * radius);
+
         float turnDist = endDist - beginDist;
-        float radius = turnDist / (.5f * Mathf.PI);
-        float turnDistCurLane = .5f * Mathf.PI * (radius - (((float)currentLane - 1.0f)) * laneWidth);
 
-        //print(turnDist + " vs " + turnDistCurLane);
+        float radiusCurLane = radius - (((float)currentLane - 1.0f)) * laneWidth;
+        float turnDistCurLane = .5f * Mathf.PI * radiusCurLane;
 
-        if (distance > beginDist && distance < endDist)
+        if (t == 1)
+        {
+            center.rotation = Quaternion.Euler(0, degreesBeforeRot + (rightTurn ? 90 : -90), 0);
+            transform.rotation = Quaternion.Euler(0, degreesBeforeRot + (rightTurn ? 90 : -90), 0);
+            t = 0;
+            completedTurn = true;
+        }
+        if (distanceTransform > beginDist && t != 1 && !completedTurn)
         {
             centerSpeed = carSpeed * (turnDist / turnDistCurLane);
-            float rotSpeed = (carSpeed / turnDistCurLane) * degrees * Time.deltaTime;
-            if (affectTransform)
-                transform.Rotate(rotSpeed * Vector3.up);
-            center.Rotate   (rotSpeed * Vector3.up);
-        }
-        else
-            centerSpeed = carSpeed;
+            t += carSpeed / turnDistCurLane * Time.deltaTime;
 
-        if (transform.rotation.eulerAngles.y > degreesBeforeRot + degrees && affectTransform) 
-        {
-            transform.rotation = Quaternion.Euler(0, degreesBeforeRot + degrees, 0);
+            t = Mathf.Clamp(t, 0, 1);
+
+            float angle = Mathf.PI * (1 - (.5f*t));
+            float lerpRadiusPos = Mathf.Lerp(Vector3.Distance(transform.position, origin), radiusCurLane, Time.deltaTime * laneSwitchSpeed);
+
+            if (affectTransform) 
+            {
+                transform.rotation = Quaternion.Euler(0, t*90, 0);
+                transform.position = origin + new Vector3(Mathf.Cos(angle) * lerpRadiusPos, 0, Mathf.Sin(angle) * lerpRadiusPos);
+            }
+            center.rotation = Quaternion.Euler(0, t*90, 0);
+            center.position = origin + new Vector3(Mathf.Cos(angle) * radius, 0, Mathf.Sin(angle) * radius);
         }
-        if (center.rotation.eulerAngles.y > degreesBeforeRot + degrees)
+        else 
         {
-            center.rotation = Quaternion.Euler(0, degreesBeforeRot + degrees, 0);
+            transform.position += carSpeed * Time.deltaTime * transform.forward;
+            center.position    += carSpeed * Time.deltaTime * transform.forward;
         }
     }
 
     float dist;
+    float laneSwitchSpeed;
 
     void Update()
     {
+        laneSwitchSpeed = laneSwitchSpeedOverCarSpeed.Evaluate(carSpeed / maxSpeed) * Base_laneSwitchSpeed;
+
         if (busyGenerating)
             return;
 
         Vector3 posBefore = transform.position;
         float vertical = Input.GetAxisRaw("Vertical");
+
+        // Links
+        if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A))
+        {
+            if (currentLane > 0 && laneSwitchSpeed > 0.5f)
+                currentLane--;
+        }
+        // Rechts
+        if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D))
+        {
+            if (currentLane < maxLanes - 1 && laneSwitchSpeed > 0.5f)
+                currentLane++;
+        }
 
         if (vertical > 0)
             carSpeed += accelerationSpeed * Time.deltaTime * vertical;
@@ -119,29 +162,14 @@ public class TaxiLaneSwitcher : MonoBehaviour
             carSpeed += brakeSpeed * Time.deltaTime * vertical;
         carSpeed = Mathf.Clamp(carSpeed, 0, maxSpeed);
 
-        RotateTick(10, 50, 90);
-
-        // Links
-        if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A))
-        {
-            if (currentLane > 0)
-                currentLane--;
-        }
-        // Rechts
-        if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D))
-        {
-            if (currentLane < maxLanes - 1)
-                currentLane++;
-        }
+        RotateTick(10, 20, new Vector3(0, .5f, -42), true);
 
         // Soepele overgang naar de nieuwe rijbaan
         Vector3 targetPosition = center.position + (currentLane - 1) * center.right * laneWidth;
         transform.position = Vector3.Lerp(transform.position, targetPosition, Time.deltaTime * laneSwitchSpeed);
 
-        transform.position += transform.forward * carSpeed    * Time.deltaTime;
-        center.position    += center.forward    * centerSpeed * Time.deltaTime;
-
-        distance += centerSpeed * Time.deltaTime;
+        distanceCenter    += centerSpeed * Time.deltaTime;
+        distanceTransform += carSpeed * Time.deltaTime;
 
         dist += Vector3.Distance(transform.position, posBefore);
         //print(dist);
